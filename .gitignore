@@ -1,0 +1,7 @@
+*.o
+*.exe
+nextfish
+.depend
+src/*.o
+src/*.res
+src/.depend

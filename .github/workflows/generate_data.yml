@@ -1,0 +1,62 @@
+name: Continuous Data Generation
+on:
+  push:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+
+    - name: Build Engine (Linux)
+      run: |
+        cd src
+        g++ -O3 -std=c++17 -Wall -fno-exceptions -DNDEBUG -DIS_64BIT -DUSE_PTHREADS -march=native \
+        benchmark.cpp bitboard.cpp evaluate.cpp main.cpp misc.cpp movegen.cpp movepick.cpp \
+        position.cpp search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp \
+        tune.cpp syzygy/tbprobe.cpp nnue/nnue_accumulator.cpp nnue/nnue_misc.cpp \
+        nnue/network.cpp nnue/features/half_ka_v2_hm.cpp nnue/features/full_threats.cpp \
+        engine.cpp score.cpp memory.cpp nextfish_strategy.cpp nextfish_timeman.cpp \
+        datagen.cpp -o ../nextfish -lpthread -latomic
+
+    - name: Run Datagen (Batch of 500 games)
+      run: |
+        chmod +x nextfish
+        ./nextfish datagen nodes 3000 games 500
+
+    - name: Commit & Push Data
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        git config --global user.name 'Nextfish Data Bot'
+        git config --global user.email 'bot@nextfish.ai'
+        
+        # Thêm file dữ liệu vào git
+        git add nextfish_data.binpack
+        
+        # Commit nếu có thay đổi
+        if git diff --staged --quiet; then
+          echo "No new data to commit"
+        else
+          git commit -m "Add new training data [gen]"
+          # Đẩy dữ liệu lên nhánh hiện tại
+          git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+        fi
+
+    - name: Trigger Next Cycle
+      if: always()
+      env:
+        GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
+      run: |
+        echo "Waiting before triggering next run..."
+        sleep 10
+        gh workflow run generate_data.yml --ref ${{ github.ref_name }} || echo "Manual trigger failed, but push may still work."
