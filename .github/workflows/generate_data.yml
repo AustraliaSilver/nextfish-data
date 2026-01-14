@@ -40,18 +40,23 @@ jobs:
         chmod +x nextfish
         python3 preprocess_pgn.py
         
-        # Chạy song song và chuyển hướng log để không bị đè nhau trên console
+        # Chạy song song và lưu PID của từng engine
         echo "Starting Core 1..."
         ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data1.binpack > log1.txt &
+        PID1=$!
         echo "Starting Core 2..."
         ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data2.binpack > log2.txt &
+        PID2=$!
         
-        # Theo dõi log của Core 1 (đại diện)
+        # Theo dõi log của Core 1 ngầm
         sleep 5
         tail -f log1.txt &
         PID_TAIL=$!
         
-        wait
+        # CHỈ ĐỢI 2 Engine (PID1 và PID2)
+        wait $PID1 $PID2
+        
+        # Sau khi engine xong, dừng lệnh tail ngay lập tức
         kill $PID_TAIL || true
         
         # Tạo file batch mới
