@@ -17,10 +17,17 @@ jobs:
       with:
         token: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
 
+    - name: Download NNUE Networks
+      run: |
+        cd src
+        wget https://tests.stockfishchess.org/api/nn/nn-c288c895ea92.nnue
+        wget https://tests.stockfishchess.org/api/nn/nn-37f18f62d772.nnue
+
     - name: Build Engine (Linux)
       run: |
         cd src
         g++ -O3 -std=c++17 -Wall -fno-exceptions -DNDEBUG -DIS_64BIT -DUSE_PTHREADS -march=native \
+        -Wno-unused-variable -Wno-unused-but-set-variable \
         benchmark.cpp bitboard.cpp evaluate.cpp main.cpp misc.cpp movegen.cpp movepick.cpp \
         position.cpp search.cpp thread.cpp timeman.cpp tt.cpp uci.cpp ucioption.cpp \
         tune.cpp syzygy/tbprobe.cpp nnue/nnue_accumulator.cpp nnue/nnue_misc.cpp \
