@@ -35,29 +35,52 @@ jobs:
         engine.cpp score.cpp memory.cpp nextfish_strategy.cpp nextfish_timeman.cpp \
         datagen.cpp -o ../nextfish -lpthread -latomic
 
-    - name: Run Datagen (Batch of 500 games)
+    - name: Run Datagen (Parallel High-Quality Batch)
       run: |
         chmod +x nextfish
-        ./nextfish datagen nodes 3000 games 500
+        # Tiền xử lý book PGN sang danh sách nước đi
+        python3 preprocess_pgn.py
+        
+        # Chạy 2 tiến trình song song tận dụng 2 core
+        # Nodes 8000: Đảm bảo độ sâu sắc bén cho dữ liệu
+        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data1.binpack &
+        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data2.binpack &
+        wait
+        
+        # Tạo file batch mới
+        cat data1.binpack data2.binpack > new_batch.binpack
+        
+        # Kiểm tra dung lượng file hiện tại + batch mới
+        FILE="nextfish_data.binpack"
+        CURRENT_SIZE=0
+        if [ -f "$FILE" ]; then
+          CURRENT_SIZE=$(stat -c%s "$FILE")
+        fi
+        
+        NEW_SIZE=$(stat -c%s "new_batch.binpack")
+        TOTAL_SIZE=$((CURRENT_SIZE + NEW_SIZE))
+        
+        # Nếu tổng vượt 90MB (94371840 bytes), rotate file cũ trước
+        if [ "$TOTAL_SIZE" -gt 94371840 ]; then
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          mv "$FILE" "data_${TIMESTAMP}.binpack"
+          echo "Total size would exceed 90MB, rotated existing data to data_${TIMESTAMP}.binpack"
+          mv new_batch.binpack "$FILE"
+        else
+          cat new_batch.binpack >> "$FILE"
+          rm new_batch.binpack
+        fi
+        
+        rm data1.binpack data2.binpack book_moves.txt preprocess_pgn.py
 
     - name: Commit & Push Data
+      id: push_step
       env:
         GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
         git config --global user.name 'Nextfish Data Bot'
         git config --global user.email 'bot@nextfish.ai'
         
-        # Kiểm tra dung lượng file (90MB = 94371840 bytes)
-        FILE="nextfish_data.binpack"
-        if [ -f "$FILE" ]; then
-          SIZE=$(stat -c%s "$FILE")
-          if [ "$SIZE" -gt 94371840 ]; then
-            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            mv "$FILE" "data_${TIMESTAMP}.binpack"
-            echo "File exceeded 90MB, rotated to data_${TIMESTAMP}.binpack"
-          fi
-        fi
-
         # Thêm tất cả các file binpack vào git
         git add *.binpack
         
@@ -65,14 +88,15 @@ jobs:
           echo "No new data to commit"
         else
           git commit -m "Add new training data [gen]"
+          # Sử dụng force push hoặc pull-rebase để tránh xung đột khi chạy song song (nếu có)
           git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
         fi
 
     - name: Trigger Next Cycle
-      if: always()
+      if: always() && (steps.push_step.outcome == 'success' || steps.push_step.outcome == 'skipped')
       env:
         GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
         echo "Waiting before triggering next run..."
-        sleep 10
-        gh workflow run generate_data.yml --ref ${{ github.ref_name }} || echo "Manual trigger failed, but push may still work."
+        sleep 15
+        gh workflow run generate_data.yml --ref ${{ github.ref_name }} || echo "Auto-trigger failed, but process may continue on next push."
