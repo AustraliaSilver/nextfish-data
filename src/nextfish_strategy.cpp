@@ -22,7 +22,7 @@ namespace Nextfish {
     double SoftSingularityMargin = -1.60; 
     double TempoBonus = -0.35;            
 
-    Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, [[maybe_unused]] Stockfish::Depth depth, [[maybe_unused]] int moveCount) {
+    Advice Strategy::consult(Stockfish::Color us, const Stockfish::Position& pos, const Stockfish::Search::Stack* ss, Stockfish::Depth [[maybe_unused]] depth, int [[maybe_unused]] moveCount) {
         Advice advice;
         
         // Game Phase & Complexity Calculation
