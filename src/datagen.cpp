@@ -77,4 +77,63 @@ namespace Stockfish::Datagen {
             }
 
             std::vector<PackedPos> gameHistory;
+            int8_t gameResult = 0; 
+
+            // 2. Engine tự đấu với cơ chế ngẫu nhiên nhẹ (Epsilon)
+            int ply = 0;
+            while (ply++ < 200) {
+                Search::LimitsType limits;
+                limits.nodes = nodesLimit;
+                engine.go(limits);
+                engine.wait_for_search_finished();
+
+                auto& rootMoves = engine.main_thread()->worker->rootMoves;
+                if (rootMoves.empty()) break;
+
+                // Chọn nước đi (Epsilon-greedy: 10% chọn nước gần tốt nhất)
+                int moveIdx = 0;
+                if (rootMoves.size() > 1 && (rng.rand<int>() % 100 < 10)) {
+                    if (std::abs(rootMoves[0].score - rootMoves[1].score) < 30) moveIdx = 1;
+                }
+
+                Move bestMove = rootMoves[moveIdx].pv[0];
+                Value score = rootMoves[moveIdx].score;
+
+                // Nén bàn cờ (4 bits per square)
+                PackedPos rec;
+                std::memset(rec.board, 0, 32);
+                for (int i = 0; i < 64; ++i) {
+                    uint8_t pc = (uint8_t)engine.get_position().piece_on(Square(i));
+                    if (i % 2 == 0) rec.board[i/2] |= (pc & 0x0F);
+                    else rec.board[i/2] |= ((pc & 0x0F) << 4);
+                }
+                
+                rec.side = (uint8_t)engine.get_position().side_to_move();
+                rec.score = (int16_t)score;
+                rec.move = bestMove.raw();
+                gameHistory.push_back(rec);
+
+                engine.set_position(engine.get_position().fen(), {UCIEngine::move(bestMove, engine.get_position().is_chess960())});
+
+                if (is_win(score)) { gameResult = (rec.side == WHITE ? 1 : -1); break; }
+                if (is_loss(score)) { gameResult = (rec.side == WHITE ? -1 : 1); break; }
+                if (engine.get_position().is_draw(ply)) break;
+            }
+
+            // 3. Gán kết quả thực tế cho toàn bộ lịch sử ván đấu và ghi file
+            for (auto& rec : gameHistory) {
+                rec.result = gameResult;
+                outfile.write(reinterpret_cast<char*>(&rec), sizeof(PackedPos));
+            }
+            
+            if (g % 1 == 0) {
+                std::cout << "\r[SF-Datagen] Game " << g << "/" << gamesCount 
+                          << " | Storage: " << (outfile.tellp() / 1024) << " KB"
+                          << " | Res: " << (gameResult == 1 ? "1-0" : (gameResult == -1 ? "0-1" : "1/2"))
+                          << "          " << std::flush;
+            }
+            if (g % 20 == 0) outfile.flush();
+        }
+        std::cout << "\nProduction run complete." << std::endl;
+    }
 }
