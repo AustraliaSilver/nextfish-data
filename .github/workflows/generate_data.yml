@@ -69,7 +69,7 @@ jobs:
         fi
 
     - name: Trigger Next Cycle
-      if: always()
+      if: success()
       env:
         GH_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
       run: |
