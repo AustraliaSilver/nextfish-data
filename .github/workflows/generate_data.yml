@@ -47,15 +47,24 @@ jobs:
         git config --global user.name 'Nextfish Data Bot'
         git config --global user.email 'bot@nextfish.ai'
         
-        # Thêm file dữ liệu vào git
-        git add nextfish_data.binpack
+        # Kiểm tra dung lượng file (90MB = 94371840 bytes)
+        FILE="nextfish_data.binpack"
+        if [ -f "$FILE" ]; then
+          SIZE=$(stat -c%s "$FILE")
+          if [ "$SIZE" -gt 94371840 ]; then
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            mv "$FILE" "data_${TIMESTAMP}.binpack"
+            echo "File exceeded 90MB, rotated to data_${TIMESTAMP}.binpack"
+          fi
+        fi
+
+        # Thêm tất cả các file binpack vào git
+        git add *.binpack
         
-        # Commit nếu có thay đổi
         if git diff --staged --quiet; then
           echo "No new data to commit"
         else
           git commit -m "Add new training data [gen]"
-          # Đẩy dữ liệu lên nhánh hiện tại
           git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
         fi
 
