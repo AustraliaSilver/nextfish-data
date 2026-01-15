@@ -40,29 +40,20 @@ jobs:
         chmod +x nextfish
         python3 preprocess_pgn.py
         
-        # Chạy song song và lưu PID của từng engine
-        echo "Starting Core 1..."
-        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data1.binpack > log1.txt &
+        # Chạy song song 2 Core
+        echo "Starting Parallel Datagen (8000 nodes)..."
+        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data1.binpack &
         PID1=$!
-        echo "Starting Core 2..."
-        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data2.binpack > log2.txt &
+        ./nextfish datagen nodes 8000 games 200 book book_moves.txt out data2.binpack &
         PID2=$!
         
-        # Theo dõi log của Core 1 ngầm
-        sleep 5
-        tail -f log1.txt &
-        PID_TAIL=$!
-        
-        # CHỈ ĐỢI 2 Engine (PID1 và PID2)
+        # Đợi 2 tiến trình kết thúc (Bản thân Engine sẽ tự gọi exit(0) khi xong)
         wait $PID1 $PID2
         
-        # Sau khi engine xong, dừng lệnh tail ngay lập tức
-        kill $PID_TAIL || true
-        
-        # Tạo file batch mới
+        echo "Datagen finished. Merging data..."
         cat data1.binpack data2.binpack > new_batch.binpack
         
-        # Kiểm tra dung lượng
+        # Kiểm tra dung lượng và xoay file
         FILE="nextfish_data.binpack"
         CURRENT_SIZE=0
         if [ -f "$FILE" ]; then
@@ -76,12 +67,13 @@ jobs:
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           mv "$FILE" "data_${TIMESTAMP}.binpack"
           mv new_batch.binpack "$FILE"
+          echo "File rotated due to size limit."
         else
           cat new_batch.binpack >> "$FILE"
           rm new_batch.binpack
         fi
         
-        rm data1.binpack data2.binpack book_moves.txt preprocess_pgn.py log1.txt log2.txt
+        rm data1.binpack data2.binpack book_moves.txt preprocess_pgn.py
 
     - name: Commit & Push Data
       id: push_step
@@ -91,18 +83,24 @@ jobs:
         git config --global user.name 'Nextfish Data Bot'
         git config --global user.email 'bot@nextfish.ai'
         
-        # Đảm bảo đồng bộ với remote trước khi push
-        git fetch origin master
-        git rebase origin/master || (git rebase --abort && git pull --rebase origin master)
-        
+        # Thêm các file binpack vào stage trước
         git add *.binpack
         
+        # Kiểm tra xem có gì để commit không
         if git diff --staged --quiet; then
           echo "No new data to commit"
-        else
-          git commit -m "Add new training data [gen]"
-          git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:master
+          exit 0
         fi
+
+        # Commit trước khi đồng bộ để tránh lỗi "unstaged changes"
+        git commit -m "Add new training data [gen]"
+        
+        # Đồng bộ với remote bằng rebase
+        git fetch origin master
+        git pull --rebase origin master
+        
+        # Push lên remote
+        git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git HEAD:master
 
     - name: Trigger Next Cycle
       if: always() && (steps.push_step.outcome == 'success' || steps.push_step.outcome == 'skipped')

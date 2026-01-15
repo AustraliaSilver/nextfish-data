@@ -135,5 +135,6 @@ namespace Stockfish::Datagen {
             if (g % 20 == 0) outfile.flush();
         }
         std::cout << "\nProduction run complete." << std::endl;
+        std::exit(0); // Thoát hẳn tiến trình để giải phóng tài nguyên và kết thúc lệnh wait
     }
 }
