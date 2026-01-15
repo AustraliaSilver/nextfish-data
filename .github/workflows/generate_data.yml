@@ -73,7 +73,7 @@ jobs:
           rm new_batch.binpack
         fi
         
-        rm data1.binpack data2.binpack book_moves.txt preprocess_pgn.py
+        rm data1.binpack data2.binpack book_moves.txt
 
     - name: Commit & Push Data
       id: push_step
@@ -83,7 +83,10 @@ jobs:
         git config --global user.name 'Nextfish Data Bot'
         git config --global user.email 'bot@nextfish.ai'
         
-        # Thêm các file binpack vào stage trước
+        # Khôi phục các file hệ thống bị thay đổi/xóa nhầm (như preprocess_pgn.py nếu lỡ tay xóa)
+        git checkout src/*.cpp .github/workflows/*.yml preprocess_pgn.py || true
+        
+        # Thêm các file binpack mới
         git add *.binpack
         
         # Kiểm tra xem có gì để commit không
@@ -92,7 +95,7 @@ jobs:
           exit 0
         fi
 
-        # Commit trước khi đồng bộ để tránh lỗi "unstaged changes"
+        # Commit dữ liệu
         git commit -m "Add new training data [gen]"
         
         # Đồng bộ với remote bằng rebase
